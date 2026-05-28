@@ -40,12 +40,31 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text(ProtocolLogic.dateKey(today))
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.secondary)
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(ProtocolLogic.dateKey(today))
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.secondary)
 
-                Text("Expander Tracker")
-                    .font(.largeTitle.weight(.bold))
+                        Text("Expander Tracker")
+                            .font(.largeTitle.weight(.bold))
+                    }
+
+                    Spacer()
+
+                    Button {
+                        path.append(.settings)
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(Color.trackerInk)
+                            .frame(width: 44, height: 44)
+                            .background(Color.trackerCard)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.trackerBorder))
+                    }
+                    .accessibilityLabel("Settings")
+                }
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Current bolt position")
@@ -81,7 +100,6 @@ struct HomeView: View {
                 }
                 PrimaryActionButton("Log Forward Turn") { path.append(.forward) }
                 SecondaryActionButton("View Calendar / Log") { path.append(.log) }
-                SecondaryActionButton("Settings") { path.append(.settings) }
             }
             .padding(20)
         }
