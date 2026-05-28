@@ -8,6 +8,7 @@ struct ExpanderTrackerApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(store)
+                .preferredColorScheme(.light)
         }
     }
 }

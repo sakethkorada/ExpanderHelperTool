@@ -28,6 +28,7 @@ struct ContentView: View {
                 }
         }
         .tint(.trackerInk)
+        .foregroundStyle(Color.trackerInk)
     }
 }
 
