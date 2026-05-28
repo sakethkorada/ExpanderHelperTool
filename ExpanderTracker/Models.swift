@@ -23,6 +23,13 @@ enum StretchStatus: String, Codable {
     case incomplete
 }
 
+enum ActiveStretchingStatus: String, Codable {
+    case active
+    case readyToReturn = "ready_to_return"
+    case completed
+    case cancelled
+}
+
 enum AppAppearanceMode: String, CaseIterable, Codable, Identifiable {
     case system
     case light
@@ -92,6 +99,7 @@ struct Settings: Codable, Equatable {
     var currentBoltIndex = 0
     var forwardTurnsPerSession = 1
     var forwardTurnSchedule = ForwardTurnSchedule()
+    var netForwardTurnsOffset = 0
     var stretchingSessionsPerDay = 2
     var allowedStretchTurnCounts = [3, 4, 5]
     var defaultStretchingTurns = 3
@@ -121,6 +129,7 @@ struct Settings: Codable, Equatable {
         case currentNutPosition
         case forwardTurnsPerSession
         case forwardTurnSchedule
+        case netForwardTurnsOffset
         case stretchingSessionsPerDay
         case allowedStretchTurnCounts
         case defaultStretchingTurns
@@ -144,6 +153,7 @@ struct Settings: Codable, Equatable {
 
         forwardTurnsPerSession = try container.decodeIfPresent(Int.self, forKey: .forwardTurnsPerSession) ?? 1
         forwardTurnSchedule = try container.decodeIfPresent(ForwardTurnSchedule.self, forKey: .forwardTurnSchedule) ?? ForwardTurnSchedule()
+        netForwardTurnsOffset = try container.decodeIfPresent(Int.self, forKey: .netForwardTurnsOffset) ?? 0
         stretchingSessionsPerDay = try container.decodeIfPresent(Int.self, forKey: .stretchingSessionsPerDay) ?? 2
         allowedStretchTurnCounts = try container.decodeIfPresent([Int].self, forKey: .allowedStretchTurnCounts) ?? [3, 4, 5]
         defaultStretchingTurns = try container.decodeIfPresent(Int.self, forKey: .defaultStretchingTurns) ?? 3
@@ -161,6 +171,7 @@ struct Settings: Codable, Equatable {
         try container.encode(settings.currentBoltIndex, forKey: .currentBoltIndex)
         try container.encode(settings.forwardTurnsPerSession, forKey: .forwardTurnsPerSession)
         try container.encode(settings.forwardTurnSchedule, forKey: .forwardTurnSchedule)
+        try container.encode(settings.netForwardTurnsOffset, forKey: .netForwardTurnsOffset)
         try container.encode(settings.stretchingSessionsPerDay, forKey: .stretchingSessionsPerDay)
         try container.encode(settings.allowedStretchTurnCounts, forKey: .allowedStretchTurnCounts)
         try container.encode(settings.defaultStretchingTurns, forKey: .defaultStretchingTurns)
@@ -258,6 +269,27 @@ struct StretchingSessionLog: Identifiable, Codable, Equatable {
     }
 }
 
+struct ActiveStretchingSession: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var startedAt: Date
+    var durationSeconds: Int
+    var sessionLabel: StretchSessionLabel
+    var stretchTurnCount: Int
+    var startPositionIndex: Int
+    var startPositionLabel: String
+    var temporaryForwardTargetIndex: Int
+    var temporaryForwardTargetLabel: String
+    var expectedReturnPositionIndex: Int
+    var expectedReturnPositionLabel: String
+    var status: ActiveStretchingStatus
+    var completedAt: Date?
+    var cancelledAt: Date?
+
+    var durationMinutes: Int {
+        max(1, durationSeconds / 60)
+    }
+}
+
 struct ForwardTurnLog: Identifiable, Codable, Equatable {
     var id = UUID()
     var date: String
@@ -268,6 +300,7 @@ struct ForwardTurnLog: Identifiable, Codable, Equatable {
     var endPositionLabel: String
     var numberOfTurns = 1
     var wasScheduled = true
+    var affectsNetTurns = true
     var overrideReason: String = ""
     var notes: String = ""
 
@@ -281,6 +314,7 @@ struct ForwardTurnLog: Identifiable, Codable, Equatable {
         endPositionLabel: String,
         numberOfTurns: Int = 1,
         wasScheduled: Bool = true,
+        affectsNetTurns: Bool = true,
         overrideReason: String = "",
         notes: String = ""
     ) {
@@ -293,6 +327,7 @@ struct ForwardTurnLog: Identifiable, Codable, Equatable {
         self.endPositionLabel = endPositionLabel
         self.numberOfTurns = numberOfTurns
         self.wasScheduled = wasScheduled
+        self.affectsNetTurns = affectsNetTurns
         self.overrideReason = overrideReason
         self.notes = notes
     }
@@ -309,6 +344,7 @@ struct ForwardTurnLog: Identifiable, Codable, Equatable {
         case endPositionLabel
         case numberOfTurns
         case wasScheduled
+        case affectsNetTurns
         case overrideReason
         case notes
     }
@@ -320,6 +356,7 @@ struct ForwardTurnLog: Identifiable, Codable, Equatable {
         completedAt = try container.decode(Date.self, forKey: .completedAt)
         numberOfTurns = try container.decodeIfPresent(Int.self, forKey: .numberOfTurns) ?? 1
         wasScheduled = try container.decodeIfPresent(Bool.self, forKey: .wasScheduled) ?? true
+        affectsNetTurns = try container.decodeIfPresent(Bool.self, forKey: .affectsNetTurns) ?? true
         overrideReason = try container.decodeIfPresent(String.self, forKey: .overrideReason) ?? ""
         notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
 
@@ -351,6 +388,7 @@ struct ForwardTurnLog: Identifiable, Codable, Equatable {
         try container.encode(endPositionLabel, forKey: .endPositionLabel)
         try container.encode(numberOfTurns, forKey: .numberOfTurns)
         try container.encode(wasScheduled, forKey: .wasScheduled)
+        try container.encode(affectsNetTurns, forKey: .affectsNetTurns)
         try container.encode(overrideReason, forKey: .overrideReason)
         try container.encode(notes, forKey: .notes)
     }
@@ -360,6 +398,7 @@ struct AppData: Codable, Equatable {
     var settings = Settings()
     var stretchingLogs: [StretchingSessionLog] = []
     var forwardLogs: [ForwardTurnLog] = []
+    var activeStretchingSession: ActiveStretchingSession?
 }
 
 enum BoltMath {
@@ -482,5 +521,28 @@ enum ProtocolLogic {
     static func completedStretchCount(logs: [StretchingSessionLog], date: Date = Date()) -> Int {
         let key = dateKey(date)
         return logs.filter { $0.date == key && $0.status == .completed }.count
+    }
+
+    static func remainingSeconds(for session: ActiveStretchingSession, now: Date = Date()) -> Int {
+        let elapsed = max(0, Int(now.timeIntervalSince(session.startedAt)))
+        return max(0, session.durationSeconds - elapsed)
+    }
+
+    static func activeStretchingStatus(for session: ActiveStretchingSession, now: Date = Date()) -> ActiveStretchingStatus {
+        if session.status == .completed || session.status == .cancelled {
+            return session.status
+        }
+        return remainingSeconds(for: session, now: now) <= 0 ? .readyToReturn : .active
+    }
+
+    static func netForwardTurns(settings: Settings, logs: [ForwardTurnLog]) -> Int {
+        let loggedTurns = logs
+            .filter { $0.affectsNetTurns }
+            .reduce(0) { total, log in total + max(0, log.numberOfTurns) }
+        return settings.netForwardTurnsOffset + loggedTurns
+    }
+
+    static func netForwardTurnsAfterLogging(settings: Settings, logs: [ForwardTurnLog], additionalTurns: Int) -> Int {
+        netForwardTurns(settings: settings, logs: logs) + max(0, additionalTurns)
     }
 }

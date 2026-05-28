@@ -12,6 +12,7 @@ struct ContentView: View {
     }
 
     @EnvironmentObject private var store: ExpanderStore
+    @Environment(\.scenePhase) private var scenePhase
     @State private var path: [Route] = []
 
     var body: some View {
@@ -32,6 +33,11 @@ struct ContentView: View {
         }
         .tint(.trackerInk)
         .foregroundStyle(Color.trackerInk)
+        .onChange(of: scenePhase) { phase in
+            if phase == .active {
+                store.refreshActiveStretchingSessionStatus()
+            }
+        }
     }
 }
 
@@ -80,11 +86,19 @@ struct HomeView: View {
                     Text("Position \(currentPosition.index + 1) of \(store.settings.boltPositionCount)")
                         .font(.body.weight(.semibold))
                         .foregroundStyle(Color.trackerSecondary)
+                    Text("Net forward turns: \(store.netForwardTurns)")
+                        .font(.title3.weight(.bold))
                     Text(nextAction)
                         .font(.title3.weight(.bold))
                         .foregroundStyle(Color.trackerInk)
                 }
                 .panelStyle()
+
+                if let activeSession = store.activeStretchingSession {
+                    ActiveStretchingCard(session: activeSession) {
+                        path.append(.stretch)
+                    }
+                }
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     StatusTile(title: "Forward turn", value: forwardStatus, urgent: forwardStatus == "Due")
@@ -132,10 +146,42 @@ struct HomeView: View {
     }
 
     private var nextAction: String {
+        if let session = store.activeStretchingSession {
+            return session.status == .readyToReturn ? "Next: turn back and complete stretching" : "Next: stretching timer running"
+        }
         if morningStatus != "Completed" { return "Next: morning stretching" }
         if forwardStatus.hasPrefix("Due") { return "Next: forward turn due" }
         if eveningStatus != "Completed" { return "Next: evening stretching" }
         return "Today is complete for your configured protocol"
+    }
+}
+
+struct ActiveStretchingCard: View {
+    let session: ActiveStretchingSession
+    let resume: () -> Void
+
+    @State private var now = Date()
+    private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Stretching timer active")
+                .font(.headline.weight(.bold))
+            Text(statusText)
+                .font(.title3.weight(.bold))
+            Text("Return target: \(session.expectedReturnPositionLabel)")
+                .foregroundStyle(Color.trackerSecondary)
+            SecondaryActionButton("Resume Stretching Session", action: resume)
+        }
+        .panelStyle()
+        .onReceive(timer) { value in
+            now = value
+        }
+    }
+
+    private var statusText: String {
+        let remaining = ProtocolLogic.remainingSeconds(for: session, now: now)
+        return remaining <= 0 ? "Ready to turn back" : "Remaining \(formatTime(remaining))"
     }
 }
 
@@ -146,9 +192,9 @@ struct StretchingSessionView: View {
     @State private var label: StretchSessionLabel = .morning
     @State private var turns = 3
     @State private var timerMinutes = 15
-    @State private var startedAt: Date?
-    @State private var remainingSeconds = 15 * 60
+    @State private var now = Date()
     @State private var confirmReverseTurns = false
+    @State private var confirmCancel = false
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -158,73 +204,50 @@ struct StretchingSessionView: View {
                 Text("Stretching Session")
                     .font(.largeTitle.weight(.bold))
 
-                Picker("Session", selection: $label) {
-                    ForEach(StretchSessionLabel.allCases) { label in
-                        Text(label.title).tag(label)
+                if let activeSession = store.activeStretchingSession {
+                    activeSessionView(activeSession)
+                } else {
+                    Picker("Session", selection: $label) {
+                        ForEach(StretchSessionLabel.allCases) { label in
+                            Text(label.title).tag(label)
+                        }
                     }
-                }
-                .pickerStyle(.segmented)
+                    .pickerStyle(.segmented)
 
-                Picker("Stretching turns", selection: $turns) {
-                    ForEach(store.settings.allowedStretchTurnCounts, id: \.self) { count in
-                        Text("\(count)").tag(count)
+                    Picker("Stretching turns", selection: $turns) {
+                        ForEach(store.settings.allowedStretchTurnCounts, id: \.self) { count in
+                            Text("\(count)").tag(count)
+                        }
                     }
-                }
-                .pickerStyle(.segmented)
+                    .pickerStyle(.segmented)
 
-                Picker("Timer", selection: $timerMinutes) {
-                    ForEach([15, 30, 45, 60], id: \.self) { minutes in
-                        Text("\(minutes) min").tag(minutes)
+                    Picker("Timer", selection: $timerMinutes) {
+                        ForEach([15, 30, 45, 60], id: \.self) { minutes in
+                            Text("\(minutes) min").tag(minutes)
+                        }
                     }
-                }
-                .pickerStyle(.segmented)
+                    .pickerStyle(.segmented)
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Mirror check")
-                        .font(.headline)
-                    PositionLine(title: "Start position", position: startPosition)
-                    PositionLine(title: "Move forward \(turns) turns to", position: temporaryTarget)
-                    PositionLine(title: "Move back \(turns) turns to", position: returnTarget)
-                }
-                .panelStyle()
-
-                VStack(alignment: .leading, spacing: 12) {
-                    StepRow(number: 1, text: "Turn forward \(turns) times to \(temporaryTarget.label).")
-                    StepRow(number: 2, text: "Start the timer.")
-                    StepRow(number: 3, text: "Turn back \(turns) times to \(returnTarget.label).")
-                    StepRow(number: 4, text: "Confirm you returned to the start position.")
-                }
-                .panelStyle()
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Timer")
-                        .font(.headline)
-                        .foregroundStyle(Color.trackerSecondary)
-                    Text(formatTime(remainingSeconds))
-                        .font(.system(size: 58, weight: .black, design: .rounded))
-                        .monospacedDigit()
-                    Text("Stretching does not change permanent bolt position.")
-                        .font(.body.weight(.semibold))
-                }
-                .panelStyle()
-
-                PrimaryActionButton(startedAt == nil ? "Start Timer" : "Timer Running") {
-                    startedAt = Date()
-                    remainingSeconds = timerMinutes * 60
-                }
-                .disabled(startedAt != nil)
-
-                PrimaryActionButton("Mark Complete") {
-                    if startedAt == nil {
-                        startedAt = Date()
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Mirror check")
+                            .font(.headline)
+                        PositionLine(title: "Start position", position: startPosition)
+                        PositionLine(title: "Move forward \(turns) turns to", position: temporaryTarget)
+                        PositionLine(title: "Move back \(turns) turns to", position: returnTarget)
                     }
-                    confirmReverseTurns = true
-                }
+                    .panelStyle()
 
-                SecondaryActionButton("Save Incomplete") {
-                    let start = startedAt ?? Date()
-                    store.logIncompleteStretchingSession(label: label, turns: turns, timerMinutes: timerMinutes, startedAt: start)
-                    dismiss()
+                    VStack(alignment: .leading, spacing: 12) {
+                        StepRow(number: 1, text: "Turn forward \(turns) times to \(temporaryTarget.label).")
+                        StepRow(number: 2, text: "Start the timer.")
+                        StepRow(number: 3, text: "Turn back \(turns) times to \(returnTarget.label).")
+                        StepRow(number: 4, text: "Confirm you returned to the start position.")
+                    }
+                    .panelStyle()
+
+                    PrimaryActionButton("Start Timer") {
+                        store.startActiveStretchingSession(label: label, turns: turns, timerMinutes: timerMinutes)
+                    }
                 }
             }
             .padding(20)
@@ -235,28 +258,82 @@ struct StretchingSessionView: View {
         .onAppear {
             turns = store.settings.defaultStretchingTurns
             timerMinutes = store.settings.defaultTimerDurationMinutes
-            remainingSeconds = timerMinutes * 60
             label = ProtocolLogic.stretchingStatus(.morning, logs: store.stretchingLogs) == "Completed" ? .evening : .morning
+            store.refreshActiveStretchingSessionStatus()
         }
-        .onChange(of: timerMinutes) { newValue in
-            if startedAt == nil {
-                remainingSeconds = newValue * 60
-            }
+        .onReceive(timer) { value in
+            now = value
+            store.refreshActiveStretchingSessionStatus(now: value)
         }
-        .onReceive(timer) { _ in
-            guard startedAt != nil, remainingSeconds > 0 else { return }
-            remainingSeconds -= 1
-        }
-        .confirmationDialog("Did you return to \(returnTarget.label)?", isPresented: $confirmReverseTurns, titleVisibility: .visible) {
+        .confirmationDialog("Complete stretching session?", isPresented: $confirmReverseTurns, titleVisibility: .visible) {
             Button("Yes, complete") {
-                let start = startedAt ?? Date()
-                store.logStretchingSession(label: label, turns: turns, timerMinutes: timerMinutes, startedAt: start, completedAt: Date())
+                store.completeActiveStretchingSession()
                 dismiss()
             }
             Button("No", role: .cancel) {}
         } message: {
-            Text("Expected final position: \(returnTarget.displayText)")
+            if let session = store.activeStretchingSession {
+                Text("I turned back \(session.stretchTurnCount) turns and returned to \(session.expectedReturnPositionLabel).")
+            }
         }
+        .confirmationDialog("Cancel active stretching session?", isPresented: $confirmCancel, titleVisibility: .visible) {
+            Button("Cancel session", role: .destructive) {
+                store.cancelActiveStretchingSession()
+                dismiss()
+            }
+            Button("Keep session", role: .cancel) {}
+        } message: {
+            Text("Only cancel if you intentionally stopped this stretching session.")
+        }
+    }
+
+    @ViewBuilder
+    private func activeSessionView(_ session: ActiveStretchingSession) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(session.status == .readyToReturn ? "Ready to turn back" : "Timer running")
+                .font(.title2.weight(.bold))
+            Text(activeTimerText(session))
+                .font(.system(size: 52, weight: .black, design: .rounded))
+                .monospacedDigit()
+            Text("Started \(ProtocolLogic.timeLabel(session.startedAt))")
+                .foregroundStyle(Color.trackerSecondary)
+        }
+        .panelStyle()
+
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Mirror check")
+                .font(.headline)
+            PositionLine(title: "Start position", position: BoltPositionSnapshot(index: session.startPositionIndex, label: session.startPositionLabel))
+            PositionLine(title: "Forward target", position: BoltPositionSnapshot(index: session.temporaryForwardTargetIndex, label: session.temporaryForwardTargetLabel))
+            PositionLine(title: "Return target", position: BoltPositionSnapshot(index: session.expectedReturnPositionIndex, label: session.expectedReturnPositionLabel))
+        }
+        .panelStyle()
+
+        VStack(alignment: .leading, spacing: 12) {
+            StepRow(number: 1, text: "Already turned forward \(session.stretchTurnCount) times to \(session.temporaryForwardTargetLabel).")
+            if ProtocolLogic.remainingSeconds(for: session, now: now) > 0 {
+                StepRow(number: 2, text: "Wait for the timer to finish.")
+            } else {
+                StepRow(number: 2, text: "Turn back \(session.stretchTurnCount) times to \(session.expectedReturnPositionLabel).")
+                StepRow(number: 3, text: "Confirm you returned to \(session.expectedReturnPositionLabel).")
+            }
+        }
+        .panelStyle()
+
+        if ProtocolLogic.remainingSeconds(for: session, now: now) <= 0 {
+            PrimaryActionButton("I Returned to \(session.expectedReturnPositionLabel)") {
+                confirmReverseTurns = true
+            }
+        }
+
+        SecondaryActionButton("Cancel Active Session") {
+            confirmCancel = true
+        }
+    }
+
+    private func activeTimerText(_ session: ActiveStretchingSession) -> String {
+        let remaining = ProtocolLogic.remainingSeconds(for: session, now: now)
+        return remaining <= 0 ? "Turn back now" : formatTime(remaining)
     }
 
     private var startPosition: BoltPositionSnapshot {
@@ -325,6 +402,8 @@ struct ForwardTurnView: View {
                     Text(pathText)
                         .font(.title3.weight(.semibold))
                         .lineLimit(nil)
+                    Text("Net turns: \(netTurnsBefore) -> \(netTurnsAfter)")
+                        .font(.title3.weight(.bold))
                 }
                 .panelStyle()
 
@@ -397,6 +476,14 @@ struct ForwardTurnView: View {
     private var pathText: String {
         path.map(\.label).joined(separator: " -> ")
     }
+
+    private var netTurnsBefore: Int {
+        store.netForwardTurns
+    }
+
+    private var netTurnsAfter: Int {
+        ProtocolLogic.netForwardTurnsAfterLogging(settings: store.settings, logs: store.forwardLogs, additionalTurns: turnCount)
+    }
 }
 
 struct LogView: View {
@@ -422,6 +509,9 @@ struct LogView: View {
                         } else {
                             Text("Bolt: \(currentPosition.displayText)")
                         }
+                        Text("Forward turns completed: \(forwardTurnCount(for: day))")
+                        Text("Net change: +\(netTurnChange(for: day))")
+                        Text("Ending net turns: \(endingNetTurns(for: day))")
                     }
                     .padding(.vertical, 4)
                 }
@@ -459,6 +549,7 @@ struct LogView: View {
                         Text("Forward turn").font(.headline)
                         Text("\(log.date) at \(ProtocolLogic.timeLabel(log.completedAt))")
                         Text("\(log.numberOfTurns) turns: \(log.startPositionLabel) to \(log.endPositionLabel)")
+                        Text("Net change: +\(log.affectsNetTurns ? log.numberOfTurns : 0)")
                         Text(log.wasScheduled ? "Scheduled" : "Manual override")
                             .foregroundStyle(Color.trackerSecondary)
                         if !log.overrideReason.isEmpty {
@@ -520,6 +611,19 @@ struct LogView: View {
         store.forwardLogs.first { $0.date == day }
     }
 
+    private func forwardTurnCount(for day: String) -> Int {
+        store.forwardLogs.filter { $0.date == day }.reduce(0) { $0 + $1.numberOfTurns }
+    }
+
+    private func netTurnChange(for day: String) -> Int {
+        store.forwardLogs.filter { $0.date == day && $0.affectsNetTurns }.reduce(0) { $0 + $1.numberOfTurns }
+    }
+
+    private func endingNetTurns(for day: String) -> Int {
+        let throughDay = store.forwardLogs.filter { $0.date <= day }
+        return ProtocolLogic.netForwardTurns(settings: store.settings, logs: throughDay)
+    }
+
     private var currentPosition: BoltPositionSnapshot {
         let settings = store.settings.normalized
         return BoltPositionSnapshot(
@@ -535,6 +639,7 @@ struct SettingsView: View {
     @State private var exportOpen = false
     @State private var exportFormat = "JSON"
     @State private var pendingBoltCount = 6
+    @State private var netForwardTurnsText = ""
     @State private var confirmBoltCountChange = false
 
     var body: some View {
@@ -601,6 +706,22 @@ struct SettingsView: View {
                     .foregroundStyle(Color.trackerSecondary)
             }
 
+            Section("Net forward turns") {
+                Text("Current net forward turns: \(store.netForwardTurns)")
+                    .font(.headline.weight(.bold))
+                TextField("Set current net turns", text: $netForwardTurnsText)
+                    .keyboardType(.numberPad)
+                Button("Save Net Turns") {
+                    if let value = Int(netForwardTurnsText.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                        store.setDisplayedNetForwardTurns(value)
+                        netForwardTurnsText = String(store.netForwardTurns)
+                    }
+                }
+                Text("This adjusts an offset so existing logs stay intact.")
+                    .font(.footnote)
+                    .foregroundStyle(Color.trackerSecondary)
+            }
+
             Section("Optional reminder times") {
                 TextField("Morning stretching, e.g. 8:00 AM", text: reminderBinding(\.morningStretching))
                 TextField("Evening stretching, e.g. 8:00 PM", text: reminderBinding(\.eveningStretching))
@@ -631,6 +752,7 @@ struct SettingsView: View {
         .background(Color.trackerBackground)
         .onAppear {
             pendingBoltCount = store.settings.normalized.boltPositionCount
+            netForwardTurnsText = String(store.netForwardTurns)
         }
         .confirmationDialog("Change number of bolt positions?", isPresented: $confirmBoltCountChange, titleVisibility: .visible) {
             Button("Apply change") {

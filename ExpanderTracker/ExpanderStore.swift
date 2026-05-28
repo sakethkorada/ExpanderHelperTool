@@ -14,6 +14,12 @@ final class ExpanderStore: ObservableObject {
     var settings: Settings { data.settings }
     var stretchingLogs: [StretchingSessionLog] { data.stretchingLogs }
     var forwardLogs: [ForwardTurnLog] { data.forwardLogs }
+    var activeStretchingSession: ActiveStretchingSession? {
+        refreshedActiveStretchingSession()
+    }
+    var netForwardTurns: Int {
+        ProtocolLogic.netForwardTurns(settings: data.settings, logs: data.forwardLogs)
+    }
 
     func updateSettings(_ transform: (inout Settings) -> Void) {
         transform(&data.settings)
@@ -50,6 +56,77 @@ final class ExpanderStore: ObservableObject {
             returnTargetLabel: BoltMath.getDisplayLabel(index: returnIndex, labels: settings.boltLabels)
         )
         data.stretchingLogs.insert(log, at: 0)
+        save()
+    }
+
+    func startActiveStretchingSession(label: StretchSessionLabel, turns: Int, timerMinutes: Int, startedAt: Date = Date()) {
+        let settings = data.settings.normalized
+        let startIndex = settings.currentBoltIndex
+        let temporaryIndex = BoltMath.calculateStretchForwardTarget(
+            startIndex: startIndex,
+            stretchTurnCount: turns,
+            totalPositions: settings.boltPositionCount
+        )
+        let returnIndex = BoltMath.calculateStretchReturnTarget(
+            forwardTargetIndex: temporaryIndex,
+            stretchTurnCount: turns,
+            totalPositions: settings.boltPositionCount
+        )
+
+        data.activeStretchingSession = ActiveStretchingSession(
+            startedAt: startedAt,
+            durationSeconds: max(1, timerMinutes) * 60,
+            sessionLabel: label,
+            stretchTurnCount: turns,
+            startPositionIndex: startIndex,
+            startPositionLabel: BoltMath.getDisplayLabel(index: startIndex, labels: settings.boltLabels),
+            temporaryForwardTargetIndex: temporaryIndex,
+            temporaryForwardTargetLabel: BoltMath.getDisplayLabel(index: temporaryIndex, labels: settings.boltLabels),
+            expectedReturnPositionIndex: returnIndex,
+            expectedReturnPositionLabel: BoltMath.getDisplayLabel(index: returnIndex, labels: settings.boltLabels),
+            status: .active
+        )
+        save()
+    }
+
+    func refreshActiveStretchingSessionStatus(now: Date = Date()) {
+        guard var session = data.activeStretchingSession else { return }
+        let status = ProtocolLogic.activeStretchingStatus(for: session, now: now)
+        guard status != session.status else { return }
+        session.status = status
+        data.activeStretchingSession = session
+        save()
+    }
+
+    func completeActiveStretchingSession(completedAt: Date = Date()) {
+        guard var session = data.activeStretchingSession else { return }
+        session.status = .completed
+        session.completedAt = completedAt
+        let log = StretchingSessionLog(
+            date: ProtocolLogic.dateKey(session.startedAt),
+            startedAt: session.startedAt,
+            completedAt: completedAt,
+            sessionLabel: session.sessionLabel,
+            stretchTurnCount: session.stretchTurnCount,
+            timerDurationMinutes: session.durationMinutes,
+            status: .completed,
+            startPositionIndex: session.startPositionIndex,
+            startPositionLabel: session.startPositionLabel,
+            temporaryTargetIndex: session.temporaryForwardTargetIndex,
+            temporaryTargetLabel: session.temporaryForwardTargetLabel,
+            returnTargetIndex: session.expectedReturnPositionIndex,
+            returnTargetLabel: session.expectedReturnPositionLabel
+        )
+        data.stretchingLogs.insert(log, at: 0)
+        data.activeStretchingSession = nil
+        save()
+    }
+
+    func cancelActiveStretchingSession(cancelledAt: Date = Date()) {
+        guard var session = data.activeStretchingSession else { return }
+        session.status = .cancelled
+        session.cancelledAt = cancelledAt
+        data.activeStretchingSession = nil
         save()
     }
 
@@ -104,6 +181,7 @@ final class ExpanderStore: ObservableObject {
             endPositionLabel: BoltMath.getDisplayLabel(index: afterIndex, labels: settings.boltLabels),
             numberOfTurns: numberOfTurns,
             wasScheduled: wasScheduled,
+            affectsNetTurns: true,
             overrideReason: overrideReason
         )
         data.forwardLogs.insert(log, at: 0)
@@ -125,6 +203,14 @@ final class ExpanderStore: ObservableObject {
         guard let index = data.stretchingLogs.firstIndex(where: { $0.id == log.id }) else { return }
         data.stretchingLogs[index].status = .incomplete
         data.stretchingLogs[index].completedAt = nil
+        save()
+    }
+
+    func setDisplayedNetForwardTurns(_ displayedValue: Int) {
+        let loggedTurns = data.forwardLogs
+            .filter { $0.affectsNetTurns }
+            .reduce(0) { total, log in total + max(0, log.numberOfTurns) }
+        data.settings.netForwardTurnsOffset = displayedValue - loggedTurns
         save()
     }
 
@@ -185,6 +271,7 @@ final class ExpanderStore: ObservableObject {
         if let decoded = try? decoder.decode(AppData.self, from: stored) {
             data = decoded
             data.settings = data.settings.normalized
+            refreshActiveStretchingSessionStatus()
         }
     }
 
@@ -193,5 +280,11 @@ final class ExpanderStore: ObservableObject {
         encoder.dateEncodingStrategy = .iso8601
         guard let encoded = try? encoder.encode(data) else { return }
         UserDefaults.standard.set(encoded, forKey: storageKey)
+    }
+
+    private func refreshedActiveStretchingSession() -> ActiveStretchingSession? {
+        guard var session = data.activeStretchingSession else { return nil }
+        session.status = ProtocolLogic.activeStretchingStatus(for: session)
+        return session
     }
 }

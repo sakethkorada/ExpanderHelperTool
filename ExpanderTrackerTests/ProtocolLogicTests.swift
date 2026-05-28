@@ -36,6 +36,65 @@ final class ProtocolLogicTests: XCTestCase {
         XCTAssertEqual(store.settings.currentBoltIndex, 5)
     }
 
+    func testActiveTimerPersistsAfterNavigatingAway() {
+        let store = ExpanderStore(storageKey: UUID().uuidString)
+        let startedAt = Date(timeIntervalSince1970: 1_000)
+
+        store.startActiveStretchingSession(label: .morning, turns: 3, timerMinutes: 15, startedAt: startedAt)
+
+        XCTAssertNotNil(store.activeStretchingSession)
+        XCTAssertEqual(store.activeStretchingSession?.startedAt, startedAt)
+        XCTAssertEqual(store.activeStretchingSession?.stretchTurnCount, 3)
+    }
+
+    func testActiveTimerSurvivesStoreReload() {
+        let storageKey = UUID().uuidString
+        let startedAt = Date(timeIntervalSince1970: 1_000)
+        let firstStore = ExpanderStore(storageKey: storageKey)
+
+        firstStore.startActiveStretchingSession(label: .evening, turns: 4, timerMinutes: 15, startedAt: startedAt)
+        let reloadedStore = ExpanderStore(storageKey: storageKey)
+
+        XCTAssertEqual(reloadedStore.activeStretchingSession?.startedAt, startedAt)
+        XCTAssertEqual(reloadedStore.activeStretchingSession?.stretchTurnCount, 4)
+    }
+
+    func testRemainingTimeIsCalculatedFromTimestamps() {
+        let session = ActiveStretchingSession(
+            startedAt: Date(timeIntervalSince1970: 1_000),
+            durationSeconds: 900,
+            sessionLabel: .morning,
+            stretchTurnCount: 3,
+            startPositionIndex: 0,
+            startPositionLabel: "3a",
+            temporaryForwardTargetIndex: 3,
+            temporaryForwardTargetLabel: "4",
+            expectedReturnPositionIndex: 0,
+            expectedReturnPositionLabel: "3a",
+            status: .active
+        )
+
+        XCTAssertEqual(ProtocolLogic.remainingSeconds(for: session, now: Date(timeIntervalSince1970: 1_300)), 600)
+    }
+
+    func testTimerReachesReadyToReturnAfterElapsedDuration() {
+        let session = ActiveStretchingSession(
+            startedAt: Date(timeIntervalSince1970: 1_000),
+            durationSeconds: 900,
+            sessionLabel: .morning,
+            stretchTurnCount: 3,
+            startPositionIndex: 0,
+            startPositionLabel: "3a",
+            temporaryForwardTargetIndex: 3,
+            temporaryForwardTargetLabel: "4",
+            expectedReturnPositionIndex: 0,
+            expectedReturnPositionLabel: "3a",
+            status: .active
+        )
+
+        XCTAssertEqual(ProtocolLogic.activeStretchingStatus(for: session, now: Date(timeIntervalSince1970: 2_000)), .readyToReturn)
+    }
+
     func testForwardTurnsUpdatePermanentCurrentPosition() {
         let store = ExpanderStore(storageKey: UUID().uuidString)
         store.updateSettings { settings in
@@ -48,6 +107,7 @@ final class ProtocolLogicTests: XCTestCase {
         XCTAssertEqual(store.forwardLogs.first?.startPositionIndex, 2)
         XCTAssertEqual(store.forwardLogs.first?.endPositionIndex, 3)
         XCTAssertEqual(store.settings.currentBoltIndex, 3)
+        XCTAssertEqual(store.netForwardTurns, 1)
     }
 
     func testMultipleForwardTurnsInOneScheduledSession() {
@@ -63,6 +123,39 @@ final class ProtocolLogicTests: XCTestCase {
         XCTAssertEqual(store.forwardLogs.first?.startPositionLabel, "2")
         XCTAssertEqual(store.forwardLogs.first?.endPositionLabel, "5")
         XCTAssertEqual(store.settings.currentBoltIndex, 4)
+        XCTAssertEqual(store.netForwardTurns, 3)
+    }
+
+    func testStretchingDoesNotAffectNetTurns() {
+        let store = ExpanderStore(storageKey: UUID().uuidString)
+
+        store.logStretchingSession(label: .morning, turns: 5, timerMinutes: 30, startedAt: Date(), completedAt: Date())
+
+        XCTAssertEqual(store.netForwardTurns, 0)
+    }
+
+    func testManualNetTurnsAdjustmentUpdatesDisplayedValueWithoutDeletingLogs() {
+        let store = ExpanderStore(storageKey: UUID().uuidString)
+        store.logForwardTurn(turns: 2)
+
+        store.setDisplayedNetForwardTurns(5)
+
+        XCTAssertEqual(store.forwardLogs.count, 1)
+        XCTAssertEqual(store.netForwardTurns, 5)
+        XCTAssertEqual(store.settings.netForwardTurnsOffset, 3)
+    }
+
+    func testDeletingForwardLogRecalculatesNetTurnsFromLogsAndOffset() {
+        let store = ExpanderStore(storageKey: UUID().uuidString)
+        store.logForwardTurn(turns: 3)
+        guard let log = store.forwardLogs.first else {
+            XCTFail("Expected forward log")
+            return
+        }
+
+        store.deleteForwardLog(log)
+
+        XCTAssertEqual(store.netForwardTurns, 0)
     }
 
     func testDoubleForwardTurnWarningLogic() {
