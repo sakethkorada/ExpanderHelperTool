@@ -917,11 +917,14 @@ struct PrimaryActionButton: View {
         Button(action: action) {
             Text(title)
                 .font(.headline.weight(.bold))
+                .foregroundStyle(Color.trackerButtonText)
                 .frame(maxWidth: .infinity, minHeight: 56)
+                .background(Color.trackerButton)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.trackerButtonBorder))
         }
-        .buttonStyle(.borderedProminent)
-        .tint(.trackerInk)
-        .controlSize(.large)
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
     }
 }
 
@@ -938,11 +941,14 @@ struct SecondaryActionButton: View {
         Button(action: action) {
             Text(title)
                 .font(.headline.weight(.bold))
+                .foregroundStyle(Color.trackerInk)
                 .frame(maxWidth: .infinity, minHeight: 52)
+                .background(Color.trackerSelected)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.trackerBorder))
         }
-        .buttonStyle(.bordered)
-        .tint(.trackerInk)
-        .controlSize(.large)
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
     }
 }
 
@@ -966,6 +972,9 @@ extension Color {
     static let trackerBorder = Color.dynamic(light: 0xD8D8D8, dark: 0x3C3C3C)
     static let trackerWarning = Color.dynamic(light: 0xF0F0F0, dark: 0x242424)
     static let trackerOrange = Color.dynamic(light: 0x595959, dark: 0xD0D0D0)
+    static let trackerButton = Color.dynamic(light: 0x111111, dark: 0xF5F5F5)
+    static let trackerButtonText = Color.dynamic(light: 0xFFFFFF, dark: 0x111111)
+    static let trackerButtonBorder = Color.dynamic(light: 0x111111, dark: 0xF5F5F5)
 
     private static func dynamic(light: UInt32, dark: UInt32) -> Color {
         #if canImport(UIKit)
