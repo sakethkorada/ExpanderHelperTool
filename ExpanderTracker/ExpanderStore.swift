@@ -17,10 +17,23 @@ final class ExpanderStore: ObservableObject {
 
     func updateSettings(_ transform: (inout Settings) -> Void) {
         transform(&data.settings)
+        data.settings = data.settings.normalized
         save()
     }
 
     func logStretchingSession(label: StretchSessionLabel, turns: Int, timerMinutes: Int, startedAt: Date, completedAt: Date) {
+        let settings = data.settings.normalized
+        let startIndex = settings.currentBoltIndex
+        let temporaryIndex = BoltMath.calculateStretchForwardTarget(
+            startIndex: startIndex,
+            stretchTurnCount: turns,
+            totalPositions: settings.boltPositionCount
+        )
+        let returnIndex = BoltMath.calculateStretchReturnTarget(
+            forwardTargetIndex: temporaryIndex,
+            stretchTurnCount: turns,
+            totalPositions: settings.boltPositionCount
+        )
         let log = StretchingSessionLog(
             date: ProtocolLogic.dateKey(startedAt),
             startedAt: startedAt,
@@ -28,13 +41,31 @@ final class ExpanderStore: ObservableObject {
             sessionLabel: label,
             stretchTurnCount: turns,
             timerDurationMinutes: timerMinutes,
-            status: .completed
+            status: .completed,
+            startPositionIndex: startIndex,
+            startPositionLabel: BoltMath.getDisplayLabel(index: startIndex, labels: settings.boltLabels),
+            temporaryTargetIndex: temporaryIndex,
+            temporaryTargetLabel: BoltMath.getDisplayLabel(index: temporaryIndex, labels: settings.boltLabels),
+            returnTargetIndex: returnIndex,
+            returnTargetLabel: BoltMath.getDisplayLabel(index: returnIndex, labels: settings.boltLabels)
         )
         data.stretchingLogs.insert(log, at: 0)
         save()
     }
 
     func logIncompleteStretchingSession(label: StretchSessionLabel, turns: Int, timerMinutes: Int, startedAt: Date) {
+        let settings = data.settings.normalized
+        let startIndex = settings.currentBoltIndex
+        let temporaryIndex = BoltMath.calculateStretchForwardTarget(
+            startIndex: startIndex,
+            stretchTurnCount: turns,
+            totalPositions: settings.boltPositionCount
+        )
+        let returnIndex = BoltMath.calculateStretchReturnTarget(
+            forwardTargetIndex: temporaryIndex,
+            stretchTurnCount: turns,
+            totalPositions: settings.boltPositionCount
+        )
         let log = StretchingSessionLog(
             date: ProtocolLogic.dateKey(startedAt),
             startedAt: startedAt,
@@ -42,25 +73,41 @@ final class ExpanderStore: ObservableObject {
             sessionLabel: label,
             stretchTurnCount: turns,
             timerDurationMinutes: timerMinutes,
-            status: .incomplete
+            status: .incomplete,
+            startPositionIndex: startIndex,
+            startPositionLabel: BoltMath.getDisplayLabel(index: startIndex, labels: settings.boltLabels),
+            temporaryTargetIndex: temporaryIndex,
+            temporaryTargetLabel: BoltMath.getDisplayLabel(index: temporaryIndex, labels: settings.boltLabels),
+            returnTargetIndex: returnIndex,
+            returnTargetLabel: BoltMath.getDisplayLabel(index: returnIndex, labels: settings.boltLabels)
         )
         data.stretchingLogs.insert(log, at: 0)
         save()
     }
 
-    func logForwardTurn(overrideReason: String = "") {
-        let before = data.settings.currentNutPosition
-        let after = before.next()
+    func logForwardTurn(turns: Int? = nil, wasScheduled: Bool = true, overrideReason: String = "") {
+        let settings = data.settings.normalized
+        let numberOfTurns = max(1, turns ?? settings.forwardTurnsPerSession)
+        let beforeIndex = settings.currentBoltIndex
+        let afterIndex = BoltMath.getPositionAfterTurns(
+            startIndex: beforeIndex,
+            turnCount: numberOfTurns,
+            totalPositions: settings.boltPositionCount
+        )
         let now = Date()
         let log = ForwardTurnLog(
             date: ProtocolLogic.dateKey(now),
             completedAt: now,
-            beforePosition: before,
-            afterPosition: after,
+            startPositionIndex: beforeIndex,
+            startPositionLabel: BoltMath.getDisplayLabel(index: beforeIndex, labels: settings.boltLabels),
+            endPositionIndex: afterIndex,
+            endPositionLabel: BoltMath.getDisplayLabel(index: afterIndex, labels: settings.boltLabels),
+            numberOfTurns: numberOfTurns,
+            wasScheduled: wasScheduled,
             overrideReason: overrideReason
         )
         data.forwardLogs.insert(log, at: 0)
-        data.settings.currentNutPosition = after
+        data.settings.currentBoltIndex = afterIndex
         save()
     }
 
@@ -90,7 +137,7 @@ final class ExpanderStore: ObservableObject {
     }
 
     func exportCSV() -> String {
-        var rows = [["type", "date", "time", "label", "turns", "timerMinutes", "status", "beforePosition", "afterPosition", "notes"]]
+        var rows = [["type", "date", "time", "label", "turns", "timerMinutes", "status", "startIndex", "startLabel", "endIndex", "endLabel", "notes"]]
 
         rows += data.stretchingLogs.map { log in
             [
@@ -101,8 +148,10 @@ final class ExpanderStore: ObservableObject {
                 String(log.stretchTurnCount),
                 String(log.timerDurationMinutes),
                 log.status.rawValue,
-                "",
-                "",
+                String(log.startPositionIndex + 1),
+                log.startPositionLabel,
+                String(log.returnTargetIndex + 1),
+                log.returnTargetLabel,
                 log.notes
             ]
         }
@@ -116,8 +165,10 @@ final class ExpanderStore: ObservableObject {
                 String(log.numberOfTurns),
                 "",
                 "completed",
-                log.beforePosition.rawValue,
-                log.afterPosition.rawValue,
+                String(log.startPositionIndex + 1),
+                log.startPositionLabel,
+                String(log.endPositionIndex + 1),
+                log.endPositionLabel,
                 log.notes
             ]
         }
@@ -133,6 +184,7 @@ final class ExpanderStore: ObservableObject {
         decoder.dateDecodingStrategy = .iso8601
         if let decoded = try? decoder.decode(AppData.self, from: stored) {
             data = decoded
+            data.settings = data.settings.normalized
         }
     }
 

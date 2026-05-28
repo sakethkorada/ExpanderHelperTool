@@ -2,35 +2,67 @@ import XCTest
 @testable import ExpanderTracker
 
 final class ProtocolLogicTests: XCTestCase {
-    func testNutPositionCircularSequence() {
-        XCTAssertEqual(NutPosition.threeA.next(), .two)
-        XCTAssertEqual(NutPosition.two.next(), .three)
-        XCTAssertEqual(NutPosition.three.next(), .four)
-        XCTAssertEqual(NutPosition.four.next(), .five)
-        XCTAssertEqual(NutPosition.five.next(), .unknown)
-        XCTAssertEqual(NutPosition.unknown.next(), .threeA)
-        XCTAssertEqual(NutPosition.five.next(turns: 3), .two)
+    func testCircularForwardMovementWithConfigurablePositions() {
+        XCTAssertEqual(BoltMath.getPositionAfterTurns(startIndex: 0, turnCount: 1, totalPositions: 6), 1)
+        XCTAssertEqual(BoltMath.getPositionAfterTurns(startIndex: 5, turnCount: 1, totalPositions: 6), 0)
+        XCTAssertEqual(BoltMath.getPositionAfterTurns(startIndex: 3, turnCount: 4, totalPositions: 5), 2)
     }
 
-    func testForwardTurnUpdatesCurrentPosition() {
-        let store = ExpanderStore(storageKey: UUID().uuidString)
-        store.updateSettings { $0.currentNutPosition = .three }
-
-        store.logForwardTurn()
-
-        XCTAssertEqual(store.forwardLogs.first?.beforePosition, .three)
-        XCTAssertEqual(store.forwardLogs.first?.afterPosition, .four)
-        XCTAssertEqual(store.settings.currentNutPosition, .four)
+    func testCircularBackwardMovementWithConfigurablePositions() {
+        XCTAssertEqual(BoltMath.getPositionBeforeTurns(startIndex: 0, turnCount: 1, totalPositions: 6), 5)
+        XCTAssertEqual(BoltMath.getPositionBeforeTurns(startIndex: 2, turnCount: 4, totalPositions: 6), 4)
+        XCTAssertEqual(BoltMath.getPositionBeforeTurns(startIndex: 1, turnCount: 8, totalPositions: 5), 3)
     }
 
-    func testStretchingSessionDoesNotUpdateCurrentPosition() {
+    func testStretchingForwardTargetCalculation() {
+        let target = BoltMath.calculateStretchForwardTarget(startIndex: 1, stretchTurnCount: 4, totalPositions: 6)
+        XCTAssertEqual(target, 5)
+    }
+
+    func testStretchingReturnTargetCalculation() {
+        let returnTarget = BoltMath.calculateStretchReturnTarget(forwardTargetIndex: 5, stretchTurnCount: 4, totalPositions: 6)
+        XCTAssertEqual(returnTarget, 1)
+    }
+
+    func testStretchingSessionDoesNotUpdatePermanentCurrentPosition() {
         let store = ExpanderStore(storageKey: UUID().uuidString)
-        store.updateSettings { $0.currentNutPosition = .unknown }
+        store.updateSettings { settings in
+            settings.currentBoltIndex = 5
+        }
 
         store.logStretchingSession(label: .morning, turns: 5, timerMinutes: 30, startedAt: Date(), completedAt: Date())
 
         XCTAssertEqual(store.stretchingLogs.first?.stretchTurnCount, 5)
-        XCTAssertEqual(store.settings.currentNutPosition, .unknown)
+        XCTAssertEqual(store.settings.currentBoltIndex, 5)
+    }
+
+    func testForwardTurnsUpdatePermanentCurrentPosition() {
+        let store = ExpanderStore(storageKey: UUID().uuidString)
+        store.updateSettings { settings in
+            settings.currentBoltIndex = 2
+            settings.forwardTurnsPerSession = 1
+        }
+
+        store.logForwardTurn()
+
+        XCTAssertEqual(store.forwardLogs.first?.startPositionIndex, 2)
+        XCTAssertEqual(store.forwardLogs.first?.endPositionIndex, 3)
+        XCTAssertEqual(store.settings.currentBoltIndex, 3)
+    }
+
+    func testMultipleForwardTurnsInOneScheduledSession() {
+        let store = ExpanderStore(storageKey: UUID().uuidString)
+        store.updateSettings { settings in
+            settings.currentBoltIndex = 1
+            settings.forwardTurnsPerSession = 3
+        }
+
+        store.logForwardTurn()
+
+        XCTAssertEqual(store.forwardLogs.first?.numberOfTurns, 3)
+        XCTAssertEqual(store.forwardLogs.first?.startPositionLabel, "2")
+        XCTAssertEqual(store.forwardLogs.first?.endPositionLabel, "5")
+        XCTAssertEqual(store.settings.currentBoltIndex, 4)
     }
 
     func testDoubleForwardTurnWarningLogic() {
@@ -38,8 +70,10 @@ final class ProtocolLogicTests: XCTestCase {
         let log = ForwardTurnLog(
             date: ProtocolLogic.dateKey(now),
             completedAt: now,
-            beforePosition: .threeA,
-            afterPosition: .two
+            startPositionIndex: 0,
+            startPositionLabel: "3a",
+            endPositionIndex: 1,
+            endPositionLabel: "2"
         )
 
         XCTAssertTrue(ProtocolLogic.forwardTurnLogged(on: now, in: [log]))
@@ -61,13 +95,13 @@ final class ProtocolLogicTests: XCTestCase {
         XCTAssertTrue(ProtocolLogic.isForwardTurnDue(settings: weekdays, date: monday))
         XCTAssertFalse(ProtocolLogic.isForwardTurnDue(settings: weekdays, date: tuesday))
 
-        var custom = Settings()
-        custom.forwardTurnSchedule.mode = .customDates
-        custom.forwardTurnSchedule.customDates = ["2026-06-02"]
-        XCTAssertTrue(ProtocolLogic.isForwardTurnDue(settings: custom, date: tuesday))
+        var weekly = Settings()
+        weekly.forwardTurnSchedule.mode = .customWeekly
+        weekly.forwardTurnSchedule.weeklyTargetCount = 2
+        XCTAssertTrue(ProtocolLogic.isForwardTurnDue(settings: weekly, forwardLogs: [], date: monday))
 
-        var off = Settings()
-        off.forwardTurnSchedule.mode = .off
-        XCTAssertFalse(ProtocolLogic.isForwardTurnDue(settings: off, date: monday))
+        var manual = Settings()
+        manual.forwardTurnSchedule.mode = .manualOnly
+        XCTAssertFalse(ProtocolLogic.isForwardTurnDue(settings: manual, date: monday))
     }
 }

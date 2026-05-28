@@ -2,7 +2,7 @@
 
 A simple personal mobile tool for tracking my expander protocol.
 
-This app is intended to help me keep track of daily stretching sessions, forward turns, timers, and nut position changes so I do not accidentally miss turns or do extra turns.
+This app is intended to help me keep track of daily stretching sessions, forward turns, timers, and bolt position changes so I do not accidentally miss turns or do extra turns.
 
 ## Purpose
 
@@ -16,7 +16,7 @@ I recently had an FME-style expander placed. The protocol includes two different
 
 2. **Forward expansion turns**
    - Permanent forward turns.
-   - These update the current nut position.
+   - These update the current bolt position.
    - Logged with before/after position.
 
 This app is only a personal tracking helper. It does not provide medical advice or make recommendations about treatment.
@@ -24,7 +24,7 @@ This app is only a personal tracking helper. It does not provide medical advice 
 ## Current Features Planned
 
 - Daily home screen showing:
-  - Current nut position
+  - Current bolt position
   - Stretching sessions completed today
   - Whether a forward turn is due or completed
 - Stretching session timer
@@ -32,14 +32,14 @@ This app is only a personal tracking helper. It does not provide medical advice 
 - Forward turn logging
 - Warning before accidental duplicate forward turns
 - Calendar or daily log view
-- Editable nut position labels
+- Editable bolt position labels
 - Manual correction of current position
 - Configurable forward-turn schedule
 - Local-only storage
 
 ## Nut Position System
 
-The expander nut has six possible positions/faces.
+The expander bolt has configurable positions/faces.
 
 Some labels are currently placeholders because I do not yet know all final face names.
 
@@ -55,6 +55,8 @@ Unknown
 ```
 
 Forward turns move down this list and wrap back to `3a`. Stretching turns are temporary and do not change the saved current position.
+
+The number of positions and labels can be edited in Settings.
 
 ## Running Locally
 
