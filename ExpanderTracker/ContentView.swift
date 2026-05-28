@@ -566,7 +566,7 @@ struct WeekdaySelector: View {
 struct ScanPlaceholderView: View {
     @EnvironmentObject private var store: ExpanderStore
     @Environment(\.dismiss) private var dismiss
-    @State private var selected: NutPosition = .a
+    @State private var selected: NutPosition = .threeA
 
     var body: some View {
         NavigationStack {
