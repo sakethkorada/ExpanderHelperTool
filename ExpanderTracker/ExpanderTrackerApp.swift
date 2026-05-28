@@ -8,7 +8,17 @@ struct ExpanderTrackerApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(store)
-                .preferredColorScheme(.light)
+                .preferredColorScheme(store.settings.appearanceMode.preferredColorScheme)
+        }
+    }
+}
+
+private extension AppAppearanceMode {
+    var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
         }
     }
 }

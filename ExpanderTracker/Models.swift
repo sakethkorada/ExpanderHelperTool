@@ -23,6 +23,22 @@ enum StretchStatus: String, Codable {
     case incomplete
 }
 
+enum AppAppearanceMode: String, CaseIterable, Codable, Identifiable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return "System"
+        case .light: return "Light"
+        case .dark: return "Dark"
+        }
+    }
+}
+
 enum ForwardScheduleMode: String, CaseIterable, Codable, Identifiable {
     case daily
     case weekdays
@@ -70,6 +86,7 @@ struct ReminderSettings: Codable, Equatable {
 }
 
 struct Settings: Codable, Equatable {
+    var appearanceMode: AppAppearanceMode = .system
     var boltPositionCount = 6
     var boltLabels = ["3a", "2", "3", "4", "5", "Unknown"]
     var currentBoltIndex = 0
@@ -98,6 +115,7 @@ struct Settings: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case boltPositionCount
+        case appearanceMode
         case boltLabels
         case currentBoltIndex
         case currentNutPosition
@@ -114,6 +132,7 @@ struct Settings: Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        appearanceMode = try container.decodeIfPresent(AppAppearanceMode.self, forKey: .appearanceMode) ?? .system
         boltPositionCount = try container.decodeIfPresent(Int.self, forKey: .boltPositionCount) ?? 6
         boltLabels = try container.decodeIfPresent([String].self, forKey: .boltLabels) ?? ["3a", "2", "3", "4", "5", "Unknown"]
         currentBoltIndex = try container.decodeIfPresent(Int.self, forKey: .currentBoltIndex) ?? 0
@@ -136,6 +155,7 @@ struct Settings: Codable, Equatable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         let settings = normalized
+        try container.encode(settings.appearanceMode, forKey: .appearanceMode)
         try container.encode(settings.boltPositionCount, forKey: .boltPositionCount)
         try container.encode(settings.boltLabels, forKey: .boltLabels)
         try container.encode(settings.currentBoltIndex, forKey: .currentBoltIndex)

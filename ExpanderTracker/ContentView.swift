@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct ContentView: View {
     enum Route: Hashable {
@@ -45,7 +48,7 @@ struct HomeView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(ProtocolLogic.dateKey(today))
                             .font(.subheadline.weight(.bold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.trackerSecondary)
 
                         Text("Expander Tracker")
                             .font(.largeTitle.weight(.bold))
@@ -70,13 +73,13 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Current bolt position")
                         .font(.headline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.trackerSecondary)
                     Text(currentPosition.label)
                         .font(.system(size: 86, weight: .black, design: .default))
                         .monospacedDigit()
                     Text("Position \(currentPosition.index + 1) of \(store.settings.boltPositionCount)")
                         .font(.body.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.trackerSecondary)
                     Text(nextAction)
                         .font(.title3.weight(.bold))
                         .foregroundStyle(Color.trackerInk)
@@ -196,7 +199,7 @@ struct StretchingSessionView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Timer")
                         .font(.headline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.trackerSecondary)
                     Text(formatTime(remainingSeconds))
                         .font(.system(size: 58, weight: .black, design: .rounded))
                         .monospacedDigit()
@@ -301,18 +304,18 @@ struct ForwardTurnView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Current position")
                         .font(.headline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.trackerSecondary)
                     Text(startPosition.label)
                         .font(.system(size: 72, weight: .black, design: .default))
                     Text(startPosition.displayText)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.trackerSecondary)
                     Text("After \(turnCount) forward \(turnCount == 1 ? "turn" : "turns")")
                         .font(.headline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.trackerSecondary)
                     Text(finalPosition.label)
                         .font(.system(size: 72, weight: .black, design: .default))
                     Text(finalPosition.displayText)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.trackerSecondary)
                 }
                 .panelStyle()
 
@@ -457,7 +460,7 @@ struct LogView: View {
                         Text("\(log.date) at \(ProtocolLogic.timeLabel(log.completedAt))")
                         Text("\(log.numberOfTurns) turns: \(log.startPositionLabel) to \(log.endPositionLabel)")
                         Text(log.wasScheduled ? "Scheduled" : "Manual override")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.trackerSecondary)
                         if !log.overrideReason.isEmpty {
                             Text("Override: \(log.overrideReason)")
                                 .foregroundStyle(.orange)
@@ -536,6 +539,15 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section("Appearance") {
+                Picker("Theme", selection: appearanceModeBinding) {
+                    ForEach(AppAppearanceMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
             Section("Bolt positions") {
                 Stepper("Number of positions: \(pendingBoltCount)", value: $pendingBoltCount, in: 2...12)
                 Button("Apply position count") {
@@ -586,7 +598,7 @@ struct SettingsView: View {
                 Stepper("Weekly target: \(store.settings.forwardTurnSchedule.weeklyTargetCount)", value: weeklyTargetBinding, in: 1...7)
                 Text("Weekdays are used for the specific-weekdays mode. Weekly target is used for the times-per-week mode.")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.trackerSecondary)
             }
 
             Section("Optional reminder times") {
@@ -595,7 +607,7 @@ struct SettingsView: View {
                 TextField("Forward turn, e.g. 7:30 AM", text: reminderBinding(\.forwardTurn))
                 Text("Reminder notifications are not enabled in this version. These times are saved as reference.")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.trackerSecondary)
             }
 
             Section("Export") {
@@ -615,6 +627,8 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .scrollContentBackground(.hidden)
+        .background(Color.trackerBackground)
         .onAppear {
             pendingBoltCount = store.settings.normalized.boltPositionCount
         }
@@ -641,6 +655,12 @@ struct SettingsView: View {
     private var currentBoltIndexBinding: Binding<Int> {
         Binding(get: { store.settings.normalized.currentBoltIndex }, set: { value in
             store.updateSettings { $0.currentBoltIndex = value }
+        })
+    }
+
+    private var appearanceModeBinding: Binding<AppAppearanceMode> {
+        Binding(get: { store.settings.appearanceMode }, set: { value in
+            store.updateSettings { $0.appearanceMode = value }
         })
     }
 
@@ -723,7 +743,7 @@ struct WeekdaySelector: View {
                     Text(label)
                         .font(.caption.weight(.bold))
                         .frame(maxWidth: .infinity, minHeight: 34)
-                        .background(store.settings.forwardTurnSchedule.weekdays.contains(day) ? Color.trackerSelected : Color.white)
+                        .background(store.settings.forwardTurnSchedule.weekdays.contains(day) ? Color.trackerSelected : Color.trackerCard)
                         .clipShape(RoundedRectangle(cornerRadius: 4))
                         .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.trackerBorder))
                 }
@@ -752,7 +772,7 @@ struct ScanPlaceholderView: View {
                         .fill(Color.trackerCard)
                     Text("Camera preview placeholder")
                         .font(.headline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.trackerSecondary)
                 }
                 .frame(height: 260)
 
@@ -794,7 +814,7 @@ struct ExportView: View {
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
-                        .background(Color.white)
+                        .background(Color.trackerCard)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .padding(20)
@@ -817,7 +837,7 @@ struct PositionLine: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.trackerSecondary)
                 Text(position.displayText)
                     .font(.headline.weight(.bold))
             }
@@ -839,7 +859,7 @@ struct StatusTile: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(.caption.weight(.bold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.trackerSecondary)
             Text(value)
                 .font(.title3.weight(.bold))
                 .minimumScaleFactor(0.75)
@@ -938,13 +958,34 @@ extension View {
 }
 
 extension Color {
-    static let trackerBackground = Color(red: 0.980, green: 0.980, blue: 0.980)
-    static let trackerCard = Color.white
-    static let trackerInk = Color(red: 0.067, green: 0.067, blue: 0.067)
-    static let trackerSelected = Color(red: 0.918, green: 0.918, blue: 0.918)
-    static let trackerBorder = Color(red: 0.847, green: 0.847, blue: 0.847)
-    static let trackerWarning = Color(red: 0.940, green: 0.940, blue: 0.940)
-    static let trackerOrange = Color(red: 0.350, green: 0.350, blue: 0.350)
+    static let trackerBackground = Color.dynamic(light: 0xFAFAFA, dark: 0x0B0B0B)
+    static let trackerCard = Color.dynamic(light: 0xFFFFFF, dark: 0x181818)
+    static let trackerInk = Color.dynamic(light: 0x111111, dark: 0xF5F5F5)
+    static let trackerSecondary = Color.dynamic(light: 0x6B6B6B, dark: 0xB8B8B8)
+    static let trackerSelected = Color.dynamic(light: 0xEAEAEA, dark: 0x2A2A2A)
+    static let trackerBorder = Color.dynamic(light: 0xD8D8D8, dark: 0x3C3C3C)
+    static let trackerWarning = Color.dynamic(light: 0xF0F0F0, dark: 0x242424)
+    static let trackerOrange = Color.dynamic(light: 0x595959, dark: 0xD0D0D0)
+
+    private static func dynamic(light: UInt32, dark: UInt32) -> Color {
+        #if canImport(UIKit)
+        Color(UIColor { traitCollection in
+            let value = traitCollection.userInterfaceStyle == .dark ? dark : light
+            return UIColor(
+                red: CGFloat((value >> 16) & 0xFF) / 255.0,
+                green: CGFloat((value >> 8) & 0xFF) / 255.0,
+                blue: CGFloat(value & 0xFF) / 255.0,
+                alpha: 1
+            )
+        })
+        #else
+        Color(
+            red: Double((light >> 16) & 0xFF) / 255.0,
+            green: Double((light >> 8) & 0xFF) / 255.0,
+            blue: Double(light & 0xFF) / 255.0
+        )
+        #endif
+    }
 }
 
 private func formatTime(_ seconds: Int) -> String {
