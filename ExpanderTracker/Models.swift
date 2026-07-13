@@ -92,8 +92,37 @@ struct ReminderSettings: Codable, Equatable {
     var forwardTurn = ""
 }
 
+struct AlignerSettings: Codable, Equatable {
+    var currentAlignerNumber = 1
+    var wearStartedAt: Date?
+    var wearDurationWeeks = 2
+    var notes = ""
+
+    var normalized: AlignerSettings {
+        var copy = self
+        copy.currentAlignerNumber = max(1, copy.currentAlignerNumber)
+        copy.wearDurationWeeks = min(3, max(2, copy.wearDurationWeeks))
+        return copy
+    }
+
+    var nextChangeDate: Date? {
+        guard let wearStartedAt else { return nil }
+        return Calendar.current.date(byAdding: .weekOfYear, value: wearDurationWeeks, to: wearStartedAt)
+    }
+}
+
+struct AlignerChangeLog: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var alignerNumber: Int
+    var startedAt: Date
+    var endedAt: Date?
+    var durationWeeks: Int
+    var notes: String
+}
+
 struct Settings: Codable, Equatable {
     var appearanceMode: AppAppearanceMode = .system
+    var aligner = AlignerSettings()
     var boltPositionCount = 6
     var boltLabels = ["3a", "2", "3", "4", "5", "Unknown"]
     var currentBoltIndex = 0
@@ -108,6 +137,7 @@ struct Settings: Codable, Equatable {
 
     var normalized: Settings {
         var copy = self
+        copy.aligner = copy.aligner.normalized
         copy.boltPositionCount = max(2, copy.boltPositionCount)
         if copy.boltLabels.count < copy.boltPositionCount {
             let start = copy.boltLabels.count + 1
@@ -124,6 +154,7 @@ struct Settings: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case boltPositionCount
         case appearanceMode
+        case aligner
         case boltLabels
         case currentBoltIndex
         case currentNutPosition
@@ -142,6 +173,7 @@ struct Settings: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         appearanceMode = try container.decodeIfPresent(AppAppearanceMode.self, forKey: .appearanceMode) ?? .system
+        aligner = (try container.decodeIfPresent(AlignerSettings.self, forKey: .aligner) ?? AlignerSettings()).normalized
         boltPositionCount = try container.decodeIfPresent(Int.self, forKey: .boltPositionCount) ?? 6
         boltLabels = try container.decodeIfPresent([String].self, forKey: .boltLabels) ?? ["3a", "2", "3", "4", "5", "Unknown"]
         currentBoltIndex = try container.decodeIfPresent(Int.self, forKey: .currentBoltIndex) ?? 0
@@ -166,6 +198,7 @@ struct Settings: Codable, Equatable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         let settings = normalized
         try container.encode(settings.appearanceMode, forKey: .appearanceMode)
+        try container.encode(settings.aligner.normalized, forKey: .aligner)
         try container.encode(settings.boltPositionCount, forKey: .boltPositionCount)
         try container.encode(settings.boltLabels, forKey: .boltLabels)
         try container.encode(settings.currentBoltIndex, forKey: .currentBoltIndex)
@@ -399,6 +432,7 @@ struct AppData: Codable, Equatable {
     var stretchingLogs: [StretchingSessionLog] = []
     var forwardLogs: [ForwardTurnLog] = []
     var activeStretchingSession: ActiveStretchingSession?
+    var alignerChangeLogs: [AlignerChangeLog] = []
 }
 
 enum BoltMath {
@@ -544,5 +578,22 @@ enum ProtocolLogic {
 
     static func netForwardTurnsAfterLogging(settings: Settings, logs: [ForwardTurnLog], additionalTurns: Int) -> Int {
         netForwardTurns(settings: settings, logs: logs) + max(0, additionalTurns)
+    }
+
+    static func alignerDaysRemaining(settings: Settings, now: Date = Date()) -> Int? {
+        guard let nextChangeDate = settings.aligner.normalized.nextChangeDate else { return nil }
+        return max(0, calendar.dateComponents([.day], from: now, to: nextChangeDate).day ?? 0)
+    }
+
+    static func alignerStatus(settings: Settings, now: Date = Date()) -> String {
+        alignerStatus(aligner: settings.aligner, now: now)
+    }
+
+    static func alignerStatus(aligner: AlignerSettings, now: Date = Date()) -> String {
+        let aligner = aligner.normalized
+        guard aligner.wearStartedAt != nil else { return "Start date not set" }
+        guard let nextChangeDate = aligner.nextChangeDate else { return "Start date not set" }
+        let days = max(0, calendar.dateComponents([.day], from: now, to: nextChangeDate).day ?? 0)
+        return days == 0 ? "Ready for next aligner" : "\(days) days remaining"
     }
 }

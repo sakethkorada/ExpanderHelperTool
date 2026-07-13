@@ -158,6 +158,34 @@ final class ProtocolLogicTests: XCTestCase {
         XCTAssertEqual(store.netForwardTurns, 0)
     }
 
+    func testAlignerChangeDateUsesConfiguredTwoWeekDuration() {
+        var settings = Settings()
+        settings.aligner.wearStartedAt = Date(timeIntervalSince1970: 1_000)
+        settings.aligner.wearDurationWeeks = 2
+
+        let expected = Calendar.current.date(byAdding: .weekOfYear, value: 2, to: Date(timeIntervalSince1970: 1_000))
+
+        XCTAssertEqual(settings.aligner.normalized.nextChangeDate, expected)
+        XCTAssertEqual(ProtocolLogic.alignerStatus(settings: settings, now: Date(timeIntervalSince1970: 1_000)), "14 days remaining")
+    }
+
+    func testStartingNextAlignerPreservesPreviousAlignerHistory() {
+        let store = ExpanderStore(storageKey: UUID().uuidString)
+        store.updateSettings { settings in
+            settings.aligner.currentAlignerNumber = 4
+            settings.aligner.wearStartedAt = Date(timeIntervalSince1970: 1_000)
+            settings.aligner.wearDurationWeeks = 3
+            settings.aligner.notes = "Lower tray"
+        }
+
+        store.startNextAligner()
+
+        XCTAssertEqual(store.alignerSettings.currentAlignerNumber, 5)
+        XCTAssertNotNil(store.alignerSettings.wearStartedAt)
+        XCTAssertEqual(store.data.alignerChangeLogs.first?.alignerNumber, 4)
+        XCTAssertEqual(store.data.alignerChangeLogs.first?.durationWeeks, 3)
+    }
+
     func testDoubleForwardTurnWarningLogic() {
         let now = Date()
         let log = ForwardTurnLog(

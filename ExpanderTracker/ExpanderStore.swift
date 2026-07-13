@@ -20,10 +20,32 @@ final class ExpanderStore: ObservableObject {
     var netForwardTurns: Int {
         ProtocolLogic.netForwardTurns(settings: data.settings, logs: data.forwardLogs)
     }
+    var alignerSettings: AlignerSettings { data.settings.aligner.normalized }
 
     func updateSettings(_ transform: (inout Settings) -> Void) {
         transform(&data.settings)
         data.settings = data.settings.normalized
+        save()
+    }
+
+    func startNextAligner() {
+        let current = data.settings.aligner.normalized
+        if let startedAt = current.wearStartedAt {
+            data.alignerChangeLogs.insert(
+                AlignerChangeLog(
+                    alignerNumber: current.currentAlignerNumber,
+                    startedAt: startedAt,
+                    endedAt: Date(),
+                    durationWeeks: current.wearDurationWeeks,
+                    notes: current.notes
+                ),
+                at: 0
+            )
+        }
+        data.settings.aligner.currentAlignerNumber = current.currentAlignerNumber + 1
+        data.settings.aligner.wearStartedAt = Date()
+        data.settings.aligner.wearDurationWeeks = current.wearDurationWeeks
+        data.settings.aligner.notes = ""
         save()
     }
 

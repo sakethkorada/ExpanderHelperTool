@@ -44,6 +44,7 @@ struct ContentView: View {
 struct HomeView: View {
     @EnvironmentObject private var store: ExpanderStore
     @Binding var path: [ContentView.Route]
+    @State private var confirmNextAligner = false
 
     private var today: Date { Date() }
 
@@ -100,6 +101,13 @@ struct HomeView: View {
                     }
                 }
 
+                AlignerCard(
+                    settings: store.alignerSettings,
+                    now: today,
+                    openSettings: { path.append(.settings) },
+                    startNext: { confirmNextAligner = true }
+                )
+
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     StatusTile(title: "Forward turn", value: forwardStatus, urgent: forwardStatus == "Due")
                     StatusTile(title: "Morning", value: morningStatus, urgent: morningStatus != "Completed")
@@ -123,6 +131,14 @@ struct HomeView: View {
         }
         .background(Color.trackerBackground)
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("Start the next aligner?", isPresented: $confirmNextAligner, titleVisibility: .visible) {
+            Button("Start Next Aligner") {
+                store.startNextAligner()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will mark aligner \(store.alignerSettings.currentAlignerNumber + 1) as started today and save the current aligner to history.")
+        }
     }
 
     private var forwardStatus: String {
@@ -153,6 +169,38 @@ struct HomeView: View {
         if forwardStatus.hasPrefix("Due") { return "Next: forward turn due" }
         if eveningStatus != "Completed" { return "Next: evening stretching" }
         return "Today is complete for your configured protocol"
+    }
+}
+
+struct AlignerCard: View {
+    let settings: AlignerSettings
+    let now: Date
+    let openSettings: () -> Void
+    let startNext: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Aligner")
+                .font(.headline.weight(.bold))
+            Text("#\(settings.currentAlignerNumber)")
+                .font(.system(size: 42, weight: .black, design: .default))
+            if let wearStartedAt = settings.wearStartedAt {
+                Text("Started \(ProtocolLogic.dateKey(wearStartedAt)) - \(settings.wearDurationWeeks) week wear period")
+                    .foregroundStyle(Color.trackerSecondary)
+                Text(ProtocolLogic.alignerStatus(aligner: settings, now: now))
+                    .font(.title3.weight(.bold))
+                if let nextChangeDate = settings.nextChangeDate {
+                    Text("Next aligner: \(ProtocolLogic.dateKey(nextChangeDate))")
+                        .foregroundStyle(Color.trackerSecondary)
+                }
+                PrimaryActionButton("Start Next Aligner", action: startNext)
+            } else {
+                Text("Wear start date is not set.")
+                    .foregroundStyle(Color.trackerSecondary)
+                SecondaryActionButton("Set Aligner Details", action: openSettings)
+            }
+        }
+        .panelStyle()
     }
 }
 
@@ -653,6 +701,22 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
             }
 
+            Section("Aligner") {
+                Stepper("Current aligner: #\(store.alignerSettings.currentAlignerNumber)", value: alignerNumberBinding, in: 1...100)
+                Toggle("Wear start date set", isOn: alignerStartDateEnabledBinding)
+                if store.alignerSettings.wearStartedAt != nil {
+                    DatePicker("Wear started", selection: alignerStartDateBinding, displayedComponents: .date)
+                }
+                Picker("Wear duration", selection: alignerDurationBinding) {
+                    Text("2 weeks").tag(2)
+                    Text("3 weeks").tag(3)
+                }
+                TextField("Notes", text: alignerNotesBinding)
+                Text("Next change date is calculated from the wear start date and duration.")
+                    .font(.footnote)
+                    .foregroundStyle(Color.trackerSecondary)
+            }
+
             Section("Bolt positions") {
                 Stepper("Number of positions: \(pendingBoltCount)", value: $pendingBoltCount, in: 2...12)
                 Button("Apply position count") {
@@ -783,6 +847,38 @@ struct SettingsView: View {
     private var appearanceModeBinding: Binding<AppAppearanceMode> {
         Binding(get: { store.settings.appearanceMode }, set: { value in
             store.updateSettings { $0.appearanceMode = value }
+        })
+    }
+
+    private var alignerNumberBinding: Binding<Int> {
+        Binding(get: { store.alignerSettings.currentAlignerNumber }, set: { value in
+            store.updateSettings { $0.aligner.currentAlignerNumber = value }
+        })
+    }
+
+    private var alignerStartDateEnabledBinding: Binding<Bool> {
+        Binding(get: { store.alignerSettings.wearStartedAt != nil }, set: { enabled in
+            store.updateSettings { settings in
+                settings.aligner.wearStartedAt = enabled ? (settings.aligner.wearStartedAt ?? Date()) : nil
+            }
+        })
+    }
+
+    private var alignerStartDateBinding: Binding<Date> {
+        Binding(get: { store.alignerSettings.wearStartedAt ?? Date() }, set: { value in
+            store.updateSettings { $0.aligner.wearStartedAt = value }
+        })
+    }
+
+    private var alignerDurationBinding: Binding<Int> {
+        Binding(get: { store.alignerSettings.wearDurationWeeks }, set: { value in
+            store.updateSettings { $0.aligner.wearDurationWeeks = value }
+        })
+    }
+
+    private var alignerNotesBinding: Binding<String> {
+        Binding(get: { store.alignerSettings.notes }, set: { value in
+            store.updateSettings { $0.aligner.notes = value }
         })
     }
 
