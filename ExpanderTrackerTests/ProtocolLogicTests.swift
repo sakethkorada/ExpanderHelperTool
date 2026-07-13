@@ -186,6 +186,22 @@ final class ProtocolLogicTests: XCTestCase {
         XCTAssertEqual(store.data.alignerChangeLogs.first?.durationWeeks, 3)
     }
 
+    func testOlderSavedDataWithoutNewAlignerFieldsStillDecodes() throws {
+        let oldData = Data(#"{
+            "settings": {
+                "forwardTurnSchedule": { "mode": "daily", "weekdays": [1, 2, 3, 4, 5, 6, 7] }
+            },
+            "stretchingLogs": [],
+            "forwardLogs": []
+        }"#.utf8)
+
+        let decoded = try JSONDecoder().decode(AppData.self, from: oldData)
+
+        XCTAssertEqual(decoded.settings.forwardTurnSchedule.weeklyTargetCount, 3)
+        XCTAssertEqual(decoded.settings.aligner.currentAlignerNumber, 1)
+        XCTAssertTrue(decoded.alignerChangeLogs.isEmpty)
+    }
+
     func testDoubleForwardTurnWarningLogic() {
         let now = Date()
         let log = ForwardTurnLog(

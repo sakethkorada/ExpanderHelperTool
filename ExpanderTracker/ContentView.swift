@@ -681,6 +681,15 @@ struct LogView: View {
     }
 }
 
+private enum SettingsField: Hashable {
+    case netTurns
+    case alignerNotes
+    case boltLabel(Int)
+    case reminderMorning
+    case reminderEvening
+    case reminderForward
+}
+
 struct SettingsView: View {
     @EnvironmentObject private var store: ExpanderStore
     @State private var scanOpen = false
@@ -689,6 +698,7 @@ struct SettingsView: View {
     @State private var pendingBoltCount = 6
     @State private var netForwardTurnsText = ""
     @State private var confirmBoltCountChange = false
+    @FocusState private var focusedField: SettingsField?
 
     var body: some View {
         Form {
@@ -712,6 +722,7 @@ struct SettingsView: View {
                     Text("3 weeks").tag(3)
                 }
                 TextField("Notes", text: alignerNotesBinding)
+                    .focused($focusedField, equals: .alignerNotes)
                 Text("Next change date is calculated from the wear start date and duration.")
                     .font(.footnote)
                     .foregroundStyle(Color.trackerSecondary)
@@ -725,6 +736,7 @@ struct SettingsView: View {
                 ForEach(0..<store.settings.normalized.boltPositionCount, id: \.self) { index in
                     TextField("Position \(index + 1)", text: labelBinding(index))
                         .textInputAutocapitalization(.characters)
+                        .focused($focusedField, equals: .boltLabel(index))
                 }
             }
 
@@ -775,6 +787,7 @@ struct SettingsView: View {
                     .font(.headline.weight(.bold))
                 TextField("Set current net turns", text: $netForwardTurnsText)
                     .keyboardType(.numberPad)
+                    .focused($focusedField, equals: .netTurns)
                 Button("Save Net Turns") {
                     if let value = Int(netForwardTurnsText.trimmingCharacters(in: .whitespacesAndNewlines)) {
                         store.setDisplayedNetForwardTurns(value)
@@ -788,8 +801,11 @@ struct SettingsView: View {
 
             Section("Optional reminder times") {
                 TextField("Morning stretching, e.g. 8:00 AM", text: reminderBinding(\.morningStretching))
+                    .focused($focusedField, equals: .reminderMorning)
                 TextField("Evening stretching, e.g. 8:00 PM", text: reminderBinding(\.eveningStretching))
+                    .focused($focusedField, equals: .reminderEvening)
                 TextField("Forward turn, e.g. 7:30 AM", text: reminderBinding(\.forwardTurn))
+                    .focused($focusedField, equals: .reminderForward)
                 Text("Reminder notifications are not enabled in this version. These times are saved as reference.")
                     .font(.footnote)
                     .foregroundStyle(Color.trackerSecondary)
@@ -814,6 +830,14 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .scrollContentBackground(.hidden)
         .background(Color.trackerBackground)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    focusedField = nil
+                }
+            }
+        }
         .onAppear {
             pendingBoltCount = store.settings.normalized.boltPositionCount
             netForwardTurnsText = String(store.netForwardTurns)

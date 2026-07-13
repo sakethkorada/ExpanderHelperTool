@@ -84,6 +84,21 @@ struct ForwardTurnSchedule: Codable, Equatable {
     var mode: ForwardScheduleMode = .daily
     var weekdays: Set<Int> = Set(1...7)
     var weeklyTargetCount = 3
+
+    enum CodingKeys: String, CodingKey {
+        case mode
+        case weekdays
+        case weeklyTargetCount
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try container.decodeIfPresent(ForwardScheduleMode.self, forKey: .mode) ?? .daily
+        weekdays = try container.decodeIfPresent(Set<Int>.self, forKey: .weekdays) ?? Set(1...7)
+        weeklyTargetCount = try container.decodeIfPresent(Int.self, forKey: .weeklyTargetCount) ?? 3
+    }
 }
 
 struct ReminderSettings: Codable, Equatable {
@@ -433,6 +448,25 @@ struct AppData: Codable, Equatable {
     var forwardLogs: [ForwardTurnLog] = []
     var activeStretchingSession: ActiveStretchingSession?
     var alignerChangeLogs: [AlignerChangeLog] = []
+
+    enum CodingKeys: String, CodingKey {
+        case settings
+        case stretchingLogs
+        case forwardLogs
+        case activeStretchingSession
+        case alignerChangeLogs
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        settings = try container.decodeIfPresent(Settings.self, forKey: .settings) ?? Settings()
+        stretchingLogs = try container.decodeIfPresent([StretchingSessionLog].self, forKey: .stretchingLogs) ?? []
+        forwardLogs = try container.decodeIfPresent([ForwardTurnLog].self, forKey: .forwardLogs) ?? []
+        activeStretchingSession = try container.decodeIfPresent(ActiveStretchingSession.self, forKey: .activeStretchingSession)
+        alignerChangeLogs = try container.decodeIfPresent([AlignerChangeLog].self, forKey: .alignerChangeLogs) ?? []
+    }
 }
 
 enum BoltMath {
